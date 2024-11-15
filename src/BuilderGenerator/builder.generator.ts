@@ -179,12 +179,20 @@ function print() {
     
     const sourceContent = readdirSync(sourceFolder).filter(f => f.endsWith(".ts"));
     for (let file of sourceContent) {
-        const source = readFileSync(`${sourceFolder}/${file}`).toString();
         const parsedEntity = parse(`${sourceFolder}/${file}`);
 
-        writeFileSync(`${targetFolder}/${parsedEntity.name}Builder.ts`, printer.printList(ts.ListFormat.MultiLine,
+        const formattedImportPath = `../entities/${file.slice(0, file.length - '.ts'.length)}`;
+
+        const withoutSuffix = file.endsWith('.entity.ts') ?
+            file.slice(0, file.length - '.entity.ts'.length) :
+            file.slice(0, file.length - '.ts'.length);
+        const formattedOutputPath = `${targetFolder}/${withoutSuffix}.builder.ts`;
+    
+        writeFileSync(
+            formattedOutputPath,
+            printer.printList(ts.ListFormat.MultiLine,
             createBuilder(
-                `../entities/${file.slice(0, file.length - '.ts'.length)}`,
+                formattedImportPath,
                 parsedEntity.name,
                 parsedEntity.properties
             ),
