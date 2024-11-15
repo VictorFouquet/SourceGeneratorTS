@@ -1,5 +1,8 @@
 import * as ts from "typescript";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+
+
+//------------------------------------------------------------------------- Source Generation
 
 const stringKeyword    = ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
 const numberKeyword    = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
@@ -11,7 +14,7 @@ function getTypeNode(t: string): ts.TypeNode {
     return t === "string" ?  stringKeyword :
         t === "number" ?  numberKeyword :
         t === "boolean" ? booleanKeyword :
-        t === "date" ? dateKeyword :
+        t === "Date" ? dateKeyword :
         undefinedKeyword;
 }
 
@@ -19,7 +22,7 @@ function getInitializer(t: string): ts.Expression {
     return t === "string" ? ts.factory.createStringLiteral("") :
         t === "number" ?  ts.factory.createNumericLiteral(0) :
         t === "boolean" ? ts.factory.createFalse() :
-        t === "date" ? ts.factory.createNewExpression(
+        t === "Date" ? ts.factory.createNewExpression(
             ts.factory.createIdentifier("Date"),
             undefined,
             []
@@ -92,29 +95,102 @@ function getMemberAssignFunctionDeclaration(member: string, paramName: string, p
     )
 }
 
-function createBuilderClass(className: string, properties: [string, "string" | "number" | "boolean" | "date"][]) {
-    return ts.factory.createClassDeclaration(
+function getBuiltObjectLiteralExpression(properties: Properties): ts.ObjectLiteralExpression {
+    return ts.factory.createObjectLiteralExpression(
+        properties.map(p => 
+            ts.factory.createPropertyAssignment(
+                ts.factory.createIdentifier(p[0]),
+                ts.factory.createPropertyAccessExpression(ts.factory.createThis(), p[0])
+            )
+        ), true
+    )
+}
+
+function getBuildArrowFunction(className: string, properties: Properties): ts.ArrowFunction {
+    return ts.factory.createArrowFunction(
         undefined,
+        undefined,
+        [],
+        ts.factory.createTypeReferenceNode(className),
+        undefined,
+        ts.factory.createBlock([
+            ts.factory.createReturnStatement(
+                getBuiltObjectLiteralExpression(properties)
+            )
+        ], true)
+    )
+}
+
+function getBuildArrowFunctionDeclaration(className: string, properties: Properties) {
+    return ts.factory.createPropertyDeclaration(
+        undefined,
+        ts.factory.createIdentifier("build"),
+        undefined,
+        undefined,
+        getBuildArrowFunction(className, properties)
+    )
+}
+
+function getBuilderClassDeclaration(className: string, properties: Properties): ts.ClassDeclaration {
+    return ts.factory.createClassDeclaration(
+        [ts.factory.createModifier(ts.SyntaxKind.ExportKeyword)],
         ts.factory.createIdentifier(`${className}Builder`),
         undefined,
         undefined,
         [
             ...properties.map(p => getPropertyDeclaration(p[0], p[1], p[1])),
             ...properties.map(p => getMemberAssignFunctionDeclaration(p[0], "value", p[1])),
+            getBuildArrowFunctionDeclaration(className, properties),
             getPropertyDeclaration("__className", "string", ts.factory.createStringLiteral(className))
         ]
     )
+}
+
+function getImportDeclaration(className: string, path: string): ts.ImportDeclaration {
+    return ts.factory.createImportDeclaration(undefined, ts.factory.createImportClause(
+        false,
+        undefined,
+        ts.factory.createNamedImports([
+            ts.factory.createImportSpecifier(
+                false,
+                undefined,
+                ts.factory.createIdentifier(className)
+            )
+        ])
+    ), ts.factory.createStringLiteral(path))
+}
+
+function createBuilder(srcPath: string, className: string, properties: Properties, dependencies: string[] = []) {
+    return ts.factory.createNodeArray([
+        getImportDeclaration(className, srcPath),
+        getBuilderClassDeclaration(className, properties)
+    ], false)
 }
 
 function print() {
     const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
     const result = ts.createSourceFile('~/Documents/coding/ts-puzzles/tmp.ts', '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
     const targetFolder = `${__dirname}/builders`;
-    mkdirSync(targetFolder);
-    writeFileSync(`${targetFolder}/UserBuilder.ts`, printer.printNode(ts.EmitHint.Unspecified,
-        createBuilderClass("User", [["id", "number"], ["email", "string"], ["isAdmin", "boolean"], ["registered", "date"]]), result),
-        { flag: "w" }
-    )
+    const sourceFolder = `${__dirname}/entities`;
+
+    if (!existsSync(targetFolder)) {
+        mkdirSync(targetFolder);
+    }
+    
+    const sourceContent = readdirSync(sourceFolder).filter(f => f.endsWith(".ts"));
+    for (let file of sourceContent) {
+        const source = readFileSync(`${sourceFolder}/${file}`).toString();
+        const parsedEntity = parse(`${sourceFolder}/${file}`);
+
+        writeFileSync(`${targetFolder}/${parsedEntity.name}Builder.ts`, printer.printList(ts.ListFormat.MultiLine,
+            createBuilder(
+                `../entities/${file.slice(0, file.length - '.ts'.length)}`,
+                parsedEntity.name,
+                parsedEntity.properties
+            ),
+            result
+        ), { flag: "w" });
+    }
 }
 
 print();
