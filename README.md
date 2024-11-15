@@ -1,6 +1,6 @@
 # Source Generator TS
 
-Sandbox project to play and experiment with typescript's  compiler`factory` API (["link"](https://github.com/microsoft/TypeScript/tree/main/src/compiler/factory) to the API sources).
+Sandbox project to play and experiment with typescript's  compiler [factory](https://github.com/microsoft/TypeScript/tree/main/src/compiler/factory) API.
 
 ## Builder Generator
 
