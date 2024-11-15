@@ -118,3 +118,66 @@ function print() {
 }
 
 print();
+
+
+//------------------------------------------------------------------------- Data Extraction
+
+
+type Primitive    = "number" | "boolean" | "string" | "Date";
+type Properties   = [string, Primitive][];
+type ParsedEntity = {
+    imports?:   string[],
+    name:       string,
+    properties: Properties
+}
+
+function visitNode(node: ts.Node, interfaceInfo: Record<string, { [key: string]: Primitive }>, checker: ts.TypeChecker): void {
+    // Check if the node is an interface declaration
+    if (ts.isSourceFile(node)) {
+        // Recursively visit the child nodes of the SourceFile
+        ts.forEachChild(node, (node) => visitNode(node, interfaceInfo, checker));
+    } else if (ts.isInterfaceDeclaration(node)) {
+        console.log("IsInterface")
+        const interfaceName = node.name.getText();
+        interfaceInfo[interfaceName] = {};
+
+        // Visit the properties of the interface
+        node.members.forEach((member) => {
+            if (ts.isPropertySignature(member)) {
+                const propertyName = member.name.getText();
+                const propertyType = checker.getTypeAtLocation(member.type!);
+                const serialized = checker.typeToString(propertyType) === 'string' ? 'string' :
+                    checker.typeToString(propertyType) === 'number' ? 'number' :
+                    checker.typeToString(propertyType) === 'boolean' ? 'boolean' : 'Date';
+    
+                interfaceInfo[interfaceName][propertyName] = serialized;
+            }
+        });
+    }
+}
+
+function parse(path: string): ParsedEntity {
+    console.log("Parse")
+    const program = ts.createProgram([path], {
+        target: ts.ScriptTarget.Latest,
+        module: ts.ModuleKind.CommonJS
+    });
+
+    const src = program.getSourceFile(path);
+    const checker = program.getTypeChecker();
+
+    if (!src) {
+        throw new Error(`Source file not found: ${path}`);
+    }
+    
+    const interfaceInfo: Record<string, { [key: string]: Primitive }> = {};
+    console.log("bout to visit")
+    visitNode(src, interfaceInfo, checker);
+
+    const entityName = Object.keys(interfaceInfo)[0];
+    console.log(interfaceInfo, entityName)
+    return {
+        name: entityName,
+        properties: Object.entries(interfaceInfo[entityName])
+    }
+}
