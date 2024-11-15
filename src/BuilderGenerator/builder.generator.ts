@@ -1,6 +1,12 @@
 import * as ts from "typescript";
-import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
 
+
+//------------------------------------------------------------------------- Helpers
+
+function LogInfo(msg: string) {
+    console.log(`[INFO] ${msg}`)
+}
 
 //------------------------------------------------------------------------- Source Generation
 
@@ -10,7 +16,7 @@ const booleanKeyword   = ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanK
 const undefinedKeyword = ts.factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword);
 const dateKeyword      = ts.factory.createTypeReferenceNode("Date");
 
-function getTypeNode(t: string): ts.TypeNode {
+function createTypeNode(t: string): ts.TypeNode {
     return t === "string" ?  stringKeyword :
         t === "number" ?  numberKeyword :
         t === "boolean" ? booleanKeyword :
@@ -18,7 +24,7 @@ function getTypeNode(t: string): ts.TypeNode {
         undefinedKeyword;
 }
 
-function getInitializer(t: string): ts.Expression {
+function createInitializer(t: string): ts.Expression {
     return t === "string" ? ts.factory.createStringLiteral("") :
         t === "number" ?  ts.factory.createNumericLiteral(0) :
         t === "boolean" ? ts.factory.createFalse() :
@@ -30,28 +36,28 @@ function getInitializer(t: string): ts.Expression {
         ts.factory.createObjectLiteralExpression()
 }
 
-function getPropertyDeclaration(name: string | ts.Identifier, type: string | ts.TypeNode, initializer: string | ts.Expression) : ts.PropertyDeclaration {
+function createPropertyDeclaration(name: string | ts.Identifier, type: string | ts.TypeNode, initializer: string | ts.Expression) : ts.PropertyDeclaration {
     return ts.factory.createPropertyDeclaration(
         undefined,
         typeof name === "string" ? ts.factory.createIdentifier(name) : name,
         undefined,
-        typeof type === "string" ? getTypeNode(type) : type,
-        typeof initializer === "string" ? getInitializer(initializer) : initializer 
+        typeof type === "string" ? createTypeNode(type) : type,
+        typeof initializer === "string" ? createInitializer(initializer) : initializer 
     )
 }
 
-function getParameterDeclaration(name: string, type: string): ts.ParameterDeclaration {
+function createParameterDeclaration(name: string, type: string): ts.ParameterDeclaration {
     return ts.factory.createParameterDeclaration(
         undefined,
         undefined,
         ts.factory.createIdentifier(name),
         undefined,
-        getTypeNode(type),
+        createTypeNode(type),
         undefined
     )
 }
 
-function getMemberAssignStatement(member: string, value: string): ts.ExpressionStatement {
+function createMemberAssignStatement(member: string, value: string): ts.ExpressionStatement {
     return ts.factory.createExpressionStatement(
         ts.factory.createBinaryExpression(
             ts.factory.createPropertyAccessExpression(ts.factory.createThis(), ts.factory.createIdentifier(member)),
@@ -61,10 +67,10 @@ function getMemberAssignStatement(member: string, value: string): ts.ExpressionS
     )
 }
 
-function getMemberAssignBlock(member: string, value: string): ts.Block {
+function createMemberAssignBlock(member: string, value: string): ts.Block {
     return ts.factory.createBlock(
         [
-            getMemberAssignStatement(member, value),
+            createMemberAssignStatement(member, value),
             ts.factory.createReturnStatement(
                 ts.factory.createThis()
             )
@@ -72,30 +78,30 @@ function getMemberAssignBlock(member: string, value: string): ts.Block {
     )
 }
 
-function getMemberAssignArrowFunction(member: string, paramName: string, paramType: string): ts.ArrowFunction {
+function createMemberAssignArrowFunction(member: string, paramName: string, paramType: string): ts.ArrowFunction {
     return ts.factory.createArrowFunction(
         undefined,
         undefined,
         [
-            getParameterDeclaration(paramName, paramType)
+            createParameterDeclaration(paramName, paramType)
         ],
         ts.factory.createThisTypeNode(),
         undefined,
-        getMemberAssignBlock(member, paramName)
+        createMemberAssignBlock(member, paramName)
     )
 }
 
-function getMemberAssignFunctionDeclaration(member: string, paramName: string, paramType: string): ts.PropertyDeclaration {
+function createMemberAssignFunctionDeclaration(member: string, paramName: string, paramType: string): ts.PropertyDeclaration {
     return ts.factory.createPropertyDeclaration(
         undefined,
         ts.factory.createIdentifier(`with${member[0].toLocaleUpperCase()}${member.slice(1)}`),
         undefined,
         undefined,
-        getMemberAssignArrowFunction(member, paramName, paramType)
+        createMemberAssignArrowFunction(member, paramName, paramType)
     )
 }
 
-function getBuiltObjectLiteralExpression(properties: Properties): ts.ObjectLiteralExpression {
+function createBuiltObjectLiteralExpression(properties: Properties): ts.ObjectLiteralExpression {
     return ts.factory.createObjectLiteralExpression(
         properties.map(p => 
             ts.factory.createPropertyAssignment(
@@ -106,7 +112,7 @@ function getBuiltObjectLiteralExpression(properties: Properties): ts.ObjectLiter
     )
 }
 
-function getBuildArrowFunction(className: string, properties: Properties): ts.ArrowFunction {
+function createBuildArrowFunction(className: string, properties: Properties): ts.ArrowFunction {
     return ts.factory.createArrowFunction(
         undefined,
         undefined,
@@ -115,38 +121,38 @@ function getBuildArrowFunction(className: string, properties: Properties): ts.Ar
         undefined,
         ts.factory.createBlock([
             ts.factory.createReturnStatement(
-                getBuiltObjectLiteralExpression(properties)
+                createBuiltObjectLiteralExpression(properties)
             )
         ], true)
     )
 }
 
-function getBuildArrowFunctionDeclaration(className: string, properties: Properties) {
+function createBuildArrowFunctionDeclaration(className: string, properties: Properties) {
     return ts.factory.createPropertyDeclaration(
         undefined,
         ts.factory.createIdentifier("build"),
         undefined,
         undefined,
-        getBuildArrowFunction(className, properties)
+        createBuildArrowFunction(className, properties)
     )
 }
 
-function getBuilderClassDeclaration(className: string, properties: Properties): ts.ClassDeclaration {
+function createBuilderClassDeclaration(className: string, properties: Properties): ts.ClassDeclaration {
     return ts.factory.createClassDeclaration(
         [ts.factory.createModifier(ts.SyntaxKind.ExportKeyword)],
         ts.factory.createIdentifier(`${className}Builder`),
         undefined,
         undefined,
         [
-            ...properties.map(p => getPropertyDeclaration(p[0], p[1], p[1])),
-            ...properties.map(p => getMemberAssignFunctionDeclaration(p[0], "value", p[1])),
-            getBuildArrowFunctionDeclaration(className, properties),
-            getPropertyDeclaration("__className", "string", ts.factory.createStringLiteral(className))
+            ...properties.map(p => createPropertyDeclaration(p[0], p[1], p[1])),
+            ...properties.map(p => createMemberAssignFunctionDeclaration(p[0], "value", p[1])),
+            createBuildArrowFunctionDeclaration(className, properties),
+            createPropertyDeclaration("__className", "string", ts.factory.createStringLiteral(className))
         ]
     )
 }
 
-function getImportDeclaration(className: string, path: string): ts.ImportDeclaration {
+function createImportDeclaration(className: string, path: string): ts.ImportDeclaration {
     return ts.factory.createImportDeclaration(undefined, ts.factory.createImportClause(
         false,
         undefined,
@@ -162,12 +168,14 @@ function getImportDeclaration(className: string, path: string): ts.ImportDeclara
 
 function createBuilder(srcPath: string, className: string, properties: Properties, dependencies: string[] = []) {
     return ts.factory.createNodeArray([
-        getImportDeclaration(className, srcPath),
-        getBuilderClassDeclaration(className, properties)
+        createImportDeclaration(className, srcPath),
+        createBuilderClassDeclaration(className, properties)
     ], false)
 }
 
 function print() {
+    LogInfo("Starting generating builders...\n");
+
     const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
     const result = ts.createSourceFile('~/Documents/coding/ts-puzzles/tmp.ts', '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
     const targetFolder = `${__dirname}/builders`;
@@ -178,8 +186,13 @@ function print() {
     }
     
     const sourceContent = readdirSync(sourceFolder).filter(f => f.endsWith(".ts"));
+
+    LogInfo(`Found ${sourceContent.length} entities to map in ./entities folder\n`)
+
     for (let file of sourceContent) {
         const parsedEntity = parse(`${sourceFolder}/${file}`);
+
+        console.log(`[INFO] Parsed entity ${parsedEntity.name} from ./entities/${file}`);
 
         const formattedImportPath = `../entities/${file.slice(0, file.length - '.ts'.length)}`;
 
@@ -198,7 +211,10 @@ function print() {
             ),
             result
         ), { flag: "w" });
+
+        LogInfo(`Created mapped ${parsedEntity.name}Builder class in ./builders/${withoutSuffix}.builder.ts\n`);
     }
+    LogInfo("Builders generation finished.")
 }
 
 print();
@@ -221,7 +237,6 @@ function visitNode(node: ts.Node, interfaceInfo: Record<string, { [key: string]:
         // Recursively visit the child nodes of the SourceFile
         ts.forEachChild(node, (node) => visitNode(node, interfaceInfo, checker));
     } else if (ts.isInterfaceDeclaration(node)) {
-        console.log("IsInterface")
         const interfaceName = node.name.getText();
         interfaceInfo[interfaceName] = {};
 
@@ -241,7 +256,6 @@ function visitNode(node: ts.Node, interfaceInfo: Record<string, { [key: string]:
 }
 
 function parse(path: string): ParsedEntity {
-    console.log("Parse")
     const program = ts.createProgram([path], {
         target: ts.ScriptTarget.Latest,
         module: ts.ModuleKind.CommonJS
@@ -255,11 +269,10 @@ function parse(path: string): ParsedEntity {
     }
     
     const interfaceInfo: Record<string, { [key: string]: Primitive }> = {};
-    console.log("bout to visit")
     visitNode(src, interfaceInfo, checker);
 
     const entityName = Object.keys(interfaceInfo)[0];
-    console.log(interfaceInfo, entityName)
+
     return {
         name: entityName,
         properties: Object.entries(interfaceInfo[entityName])
