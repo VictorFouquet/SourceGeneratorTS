@@ -13,32 +13,62 @@ function LogInfo(msg: string) {
 const stringKeyword    = ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
 const numberKeyword    = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
 const booleanKeyword   = ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
-const undefinedKeyword = ts.factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword);
 const dateKeyword      = ts.factory.createTypeReferenceNode("Date");
 
-function createTypeNode(t: string): ts.TypeNode {
-    return t === "string" ?  stringKeyword :
-        t === "number" ?  numberKeyword :
-        t === "boolean" ? booleanKeyword :
-        t === "Date" ? dateKeyword :
-        undefinedKeyword;
+const defaultStringExpression  = ts.factory.createStringLiteral("");
+const defaultNumberExpression  = ts.factory.createNumericLiteral(0);
+const defaultBooleanExpression = ts.factory.createFalse();
+const defaultDateExpression    = createNewExpression("Date");
+
+const exportModifier  = ts.factory.createModifier(ts.SyntaxKind.ExportKeyword);
+const privateModifier = ts.factory.createModifier(ts.SyntaxKind.PrivateKeyword);
+
+const buildMemberName = ts.factory.createIdentifier("build");
+
+
+function createTypeNode(type: string): ts.TypeNode {
+    return type === "string"  ? stringKeyword :
+        type    === "number"  ? numberKeyword :
+        type    === "boolean" ? booleanKeyword :
+        type    === "Date"    ? dateKeyword :
+        ts.factory.createTypeReferenceNode(type);
 }
 
-function createInitializer(t: string): ts.Expression {
-    return t === "string" ? ts.factory.createStringLiteral("") :
-        t === "number" ?  ts.factory.createNumericLiteral(0) :
-        t === "boolean" ? ts.factory.createFalse() :
-        t === "Date" ? ts.factory.createNewExpression(
-            ts.factory.createIdentifier("Date"),
-            undefined,
-            []
-        ) :
-        ts.factory.createObjectLiteralExpression()
-}
-
-function createPropertyDeclaration(name: string | ts.Identifier, type: string | ts.TypeNode, initializer: string | ts.Expression) : ts.PropertyDeclaration {
-    return ts.factory.createPropertyDeclaration(
+function createNewExpression(typeName: string): ts.NewExpression {
+    return ts.factory.createNewExpression(
+        ts.factory.createIdentifier(typeName),
         undefined,
+        []
+    )
+}
+
+function createCallBuildExpression(type: string): ts.CallExpression {
+    return ts.factory.createCallExpression(
+        ts.factory.createPropertyAccessExpression(
+            createNewExpression(`${type}Builder`),
+            buildMemberName
+        ),
+        undefined,
+        []
+    );
+}
+
+function createInitializer(type: string): ts.Expression {
+    return type === "string"  ? defaultStringExpression :
+        type    === "number"  ? defaultNumberExpression :
+        type    === "boolean" ? defaultBooleanExpression :
+        type    === "Date"    ? defaultDateExpression :
+        createCallBuildExpression(type)
+}
+
+function createPropertyDeclaration(
+    name: string | ts.Identifier,
+    type: string | ts.TypeNode,
+    initializer: string | ts.Expression,
+    isPrivate: boolean = false
+) : ts.PropertyDeclaration {
+    return ts.factory.createPropertyDeclaration(
+        isPrivate ? [privateModifier] : [],
         typeof name === "string" ? ts.factory.createIdentifier(name) : name,
         undefined,
         typeof type === "string" ? createTypeNode(type) : type,
@@ -47,12 +77,31 @@ function createPropertyDeclaration(name: string | ts.Identifier, type: string | 
 }
 
 function createParameterDeclaration(name: string, type: string): ts.ParameterDeclaration {
+    let typeNode: ts.TypeNode;
+
+    if (["boolean", "number", "string", "Date"].includes(type)) {  // Parameter is a Primitive
+        typeNode = createTypeNode(type);
+    } else {                                                       // Parameter is a Callback
+        typeNode = ts.factory.createFunctionTypeNode(
+            undefined,
+            [
+                ts.factory.createParameterDeclaration(
+                    undefined,
+                    undefined,
+                    ts.factory.createIdentifier("builder"),
+                    undefined,
+                    ts.factory.createTypeReferenceNode(`${type}Builder`)
+                )
+            ],
+            ts.factory.createTypeReferenceNode(`${type}Builder`)
+        );
+    }
     return ts.factory.createParameterDeclaration(
         undefined,
         undefined,
         ts.factory.createIdentifier(name),
         undefined,
-        createTypeNode(type),
+        typeNode,
         undefined
     )
 }
@@ -78,6 +127,35 @@ function createMemberAssignBlock(member: string, value: string): ts.Block {
     )
 }
 
+function createMemberAssignWithCallbackBlock(member: string, value: string, paramType: string): ts.Block {
+    return ts.factory.createBlock([
+        ts.factory.createExpressionStatement(
+            ts.factory.createBinaryExpression(              // this.[member] = callback(new [Type]Builder()).build()
+                ts.factory.createPropertyAccessExpression(  // this.[member]
+                    ts.factory.createThis(),                // this
+                    ts.factory.createIdentifier(member)     // [member]
+                ),
+                ts.factory.createToken(ts.SyntaxKind.EqualsToken), // =
+                ts.factory.createCallExpression(                   // callback(new [Type]Builder()).build()
+                    ts.factory.createPropertyAccessExpression(     // callback(new [Type]Builder()).build
+                        ts.factory.createCallExpression(                     // callback(new [Type]Builder())
+                            ts.factory.createIdentifier(value),              // callback
+                            undefined,
+                            [ createNewExpression(`${paramType}Builder`) ]   // new TypeBuilder()
+                        ),
+                        buildMemberName
+                    ),
+                    undefined,
+                    []
+                )
+            )
+        ),
+        ts.factory.createReturnStatement(
+            ts.factory.createThis()
+        )
+    ], true);
+}
+
 function createMemberAssignArrowFunction(member: string, paramName: string, paramType: string): ts.ArrowFunction {
     return ts.factory.createArrowFunction(
         undefined,
@@ -86,12 +164,15 @@ function createMemberAssignArrowFunction(member: string, paramName: string, para
             createParameterDeclaration(paramName, paramType)
         ],
         ts.factory.createThisTypeNode(),
-        undefined,
-        createMemberAssignBlock(member, paramName)
+        undefined,        
+        ["boolean", "number", "string", "Date"].includes(paramType) ?
+            createMemberAssignBlock(member, paramName) :
+            createMemberAssignWithCallbackBlock(member, paramName, paramType)
+        
     )
 }
 
-function createMemberAssignFunctionDeclaration(member: string, paramName: string, paramType: string): ts.PropertyDeclaration {
+function createWithFunctionDeclaration(member: string, paramName: string, paramType: string): ts.PropertyDeclaration {
     return ts.factory.createPropertyDeclaration(
         undefined,
         ts.factory.createIdentifier(`with${member[0].toLocaleUpperCase()}${member.slice(1)}`),
@@ -130,7 +211,7 @@ function createBuildArrowFunction(className: string, properties: Properties): ts
 function createBuildArrowFunctionDeclaration(className: string, properties: Properties) {
     return ts.factory.createPropertyDeclaration(
         undefined,
-        ts.factory.createIdentifier("build"),
+        buildMemberName,
         undefined,
         undefined,
         createBuildArrowFunction(className, properties)
@@ -139,13 +220,13 @@ function createBuildArrowFunctionDeclaration(className: string, properties: Prop
 
 function createBuilderClassDeclaration(className: string, properties: Properties): ts.ClassDeclaration {
     return ts.factory.createClassDeclaration(
-        [ts.factory.createModifier(ts.SyntaxKind.ExportKeyword)],
+        [exportModifier],
         ts.factory.createIdentifier(`${className}Builder`),
         undefined,
         undefined,
         [
-            ...properties.map(p => createPropertyDeclaration(p[0], p[1], p[1])),
-            ...properties.map(p => createMemberAssignFunctionDeclaration(p[0], "value", p[1])),
+            ...properties.map(p => createPropertyDeclaration(p[0], p[1], p[1], true)),
+            ...properties.map(p => createWithFunctionDeclaration(p[0], ["boolean", "string", "number", "Date"].includes(p[1]) ? "value" : "callback", p[1])),
             createBuildArrowFunctionDeclaration(className, properties),
             createPropertyDeclaration("__className", "string", ts.factory.createStringLiteral(className))
         ]
@@ -166,9 +247,10 @@ function createImportDeclaration(className: string, path: string): ts.ImportDecl
     ), ts.factory.createStringLiteral(path))
 }
 
-function createBuilder(srcPath: string, className: string, properties: Properties, dependencies: string[] = []) {
+function createBuilder(srcPath: string, className: string, properties: Properties, dependencies: [string, string][] = []) {
     return ts.factory.createNodeArray([
         createImportDeclaration(className, srcPath),
+        ...(dependencies.map(d => createImportDeclaration(...d))),
         createBuilderClassDeclaration(className, properties)
     ], false)
 }
@@ -192,7 +274,7 @@ function print() {
     for (let file of sourceContent) {
         const parsedEntity = parse(`${sourceFolder}/${file}`);
 
-        console.log(`[INFO] Parsed entity ${parsedEntity.name} from ./entities/${file}`);
+        LogInfo(`Parsed entity ${parsedEntity.name} from ./entities/${file}`);
 
         const formattedImportPath = `../entities/${file.slice(0, file.length - '.ts'.length)}`;
 
@@ -207,7 +289,8 @@ function print() {
             createBuilder(
                 formattedImportPath,
                 parsedEntity.name,
-                parsedEntity.properties
+                parsedEntity.properties,
+                parsedEntity.imports
             ),
             result
         ), { flag: "w" });
@@ -224,32 +307,39 @@ print();
 
 
 type Primitive    = "number" | "boolean" | "string" | "Date";
-type Properties   = [string, Primitive][];
+type PropertyType = Primitive | Exclude<string, Primitive>;
+type Properties   = [string, PropertyType][];
 type ParsedEntity = {
-    imports?:   string[],
+    imports?:   [string, string][],
     name:       string,
     properties: Properties
 }
 
-function visitNode(node: ts.Node, interfaceInfo: Record<string, { [key: string]: Primitive }>, checker: ts.TypeChecker): void {
+function visitNode(node: ts.Node, interfaceInfo: Partial<ParsedEntity>, checker: ts.TypeChecker): void {
     // Check if the node is an interface declaration
     if (ts.isSourceFile(node)) {
         // Recursively visit the child nodes of the SourceFile
         ts.forEachChild(node, (node) => visitNode(node, interfaceInfo, checker));
+    } else if (ts.isImportDeclaration(node)) {
+        if (node.importClause?.namedBindings !== undefined && ts.isNamedImports(node.importClause?.namedBindings)) {
+            for (let element of node.importClause.namedBindings.elements) {
+                const imported = element.name.text;
+                const pathFormatted = `${imported[0].toLocaleLowerCase()}${imported.slice(1)}`;
+                interfaceInfo.imports?.push([imported, `../entities/${pathFormatted}.entity`]);
+                interfaceInfo.imports?.push([`${imported}Builder`, `./${pathFormatted}.builder`])
+            }
+        }
     } else if (ts.isInterfaceDeclaration(node)) {
         const interfaceName = node.name.getText();
-        interfaceInfo[interfaceName] = {};
+        interfaceInfo.name = interfaceName;
 
         // Visit the properties of the interface
         node.members.forEach((member) => {
             if (ts.isPropertySignature(member)) {
                 const propertyName = member.name.getText();
                 const propertyType = checker.getTypeAtLocation(member.type!);
-                const serialized = checker.typeToString(propertyType) === 'string' ? 'string' :
-                    checker.typeToString(propertyType) === 'number' ? 'number' :
-                    checker.typeToString(propertyType) === 'boolean' ? 'boolean' : 'Date';
-    
-                interfaceInfo[interfaceName][propertyName] = serialized;
+
+                interfaceInfo.properties?.push([propertyName, checker.typeToString(propertyType)]);
             }
         });
     }
@@ -268,13 +358,16 @@ function parse(path: string): ParsedEntity {
         throw new Error(`Source file not found: ${path}`);
     }
     
-    const interfaceInfo: Record<string, { [key: string]: Primitive }> = {};
+    const interfaceInfo: Partial<ParsedEntity> = { properties: [], imports: [] };
     visitNode(src, interfaceInfo, checker);
 
-    const entityName = Object.keys(interfaceInfo)[0];
+    if (interfaceInfo.name === undefined) {
+        throw new Error(`No entity could be found in file ${path}`);
+    }
 
     return {
-        name: entityName,
-        properties: Object.entries(interfaceInfo[entityName])
+        imports: interfaceInfo.imports,
+        name: interfaceInfo.name,
+        properties: interfaceInfo.properties ?? []
     }
 }
