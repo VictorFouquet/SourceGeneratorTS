@@ -332,7 +332,7 @@ function visitNode(node: ts.Node, interfaceInfo: Partial<ParsedEntity>, checker:
     } else if (ts.isInterfaceDeclaration(node)) {
         const interfaceName = node.name.getText();
         interfaceInfo.name = interfaceName;
-
+        
         // Visit the properties of the interface
         node.members.forEach((member) => {
             if (ts.isPropertySignature(member)) {
@@ -342,6 +342,20 @@ function visitNode(node: ts.Node, interfaceInfo: Partial<ParsedEntity>, checker:
                 interfaceInfo.properties?.push([propertyName, checker.typeToString(propertyType)]);
             }
         });
+    } else if (ts.isTypeAliasDeclaration(node)) {
+        const typeName = node.name.getText();
+        interfaceInfo.name = typeName;
+        
+        // If the type alias is defining an object type
+        if (ts.isTypeLiteralNode(node.type)) {
+            node.type.members.forEach((member) => {
+            if (ts.isPropertySignature(member)) {
+                const propertyName = member.name.getText();
+                const propertyType = checker.getTypeAtLocation(member.type!);
+                interfaceInfo.properties?.push([propertyName, checker.typeToString(propertyType)]);
+            }
+            });
+        }
     }
 }
 
