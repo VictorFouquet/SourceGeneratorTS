@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "generate-builder": "npx ts-node ./src/BuilderGenerator/builder.generator.ts"
+    "generate-builder": "npx ts-node ./src/BuilderGenerator/main.ts"
   },
   "dependencies": {
     "@type-challenges/utils": "^0.1.1",
