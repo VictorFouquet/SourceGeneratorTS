@@ -22,11 +22,14 @@ From the following entity :
 
 ```typescript
 // src/BuilderGenerator/entities/user.entity.ts
+import { Todo } from "./todo.entity";
+
 export interface User {
     id: number,
     name: string,
     isAdmin: boolean,
-    creationDate: Date
+    creationDate: Date,
+    todo: Todo
 }
 ```
 The builder generator will create :
@@ -34,36 +37,44 @@ The builder generator will create :
 ```typescript
 // src/BuilderGenerator/builders/user.builder.ts
 import { User } from "../entities/user.entity";
+import { Todo } from "../entities/todo.entity";
+import { TodoBuilder } from "./todo.builder";
 export class UserBuilder {
-    id: number = 0;
-    name: string = "";
-    isAdmin: boolean = false;
-    creationDate: Date = new Date();
-    withId = (value: number): this => {
+    private id: number = 0;
+    private name: string = "";
+    private isAdmin: boolean = false;
+    private creationDate: Date = new Date();
+    private todo: Todo = new TodoBuilder().build();
+    readonly withId = (value: number): this => {
         this.id = value;
         return this;
     };
-    withName = (value: string): this => {
+    readonly withName = (value: string): this => {
         this.name = value;
         return this;
     };
-    withIsAdmin = (value: boolean): this => {
+    readonly withIsAdmin = (value: boolean): this => {
         this.isAdmin = value;
         return this;
     };
-    withCreationDate = (value: Date): this => {
+    readonly withCreationDate = (value: Date): this => {
         this.creationDate = value;
         return this;
     };
-    build = (): User => {
+    readonly withTodo = (callback: (builder: TodoBuilder) => TodoBuilder): this => {
+        this.todo = callback(new TodoBuilder()).build();
+        return this;
+    };
+    readonly build = (): User => {
         return {
             id: this.id,
             name: this.name,
             isAdmin: this.isAdmin,
-            creationDate: this.creationDate
+            creationDate: this.creationDate,
+            todo: this.todo
         };
     };
-    __className: string = "User";
+    readonly __className: string = "User";
 }
 ```
 **Running the script**
