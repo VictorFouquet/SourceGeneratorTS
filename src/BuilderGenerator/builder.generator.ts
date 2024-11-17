@@ -1,6 +1,7 @@
 import * as ts from "typescript";
 import { writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
 import { BuilderFactory } from "./builder.factory";
+import { ImportFactory } from "./import.factory";
 
 
 //------------------------------------------------------------------------- Helpers
@@ -12,24 +13,11 @@ function LogInfo(msg: string) {
 //------------------------------------------------------------------------- Source Generation
 
 
-function createImportDeclaration(className: string, path: string): ts.ImportDeclaration {
-    return ts.factory.createImportDeclaration(undefined, ts.factory.createImportClause(
-        false,
-        undefined,
-        ts.factory.createNamedImports([
-            ts.factory.createImportSpecifier(
-                false,
-                undefined,
-                ts.factory.createIdentifier(className)
-            )
-        ])
-    ), ts.factory.createStringLiteral(path))
-}
+
 
 function createBuilder(srcPath: string, className: string, properties: Properties, dependencies: [string, string][] = []) {
     return ts.factory.createNodeArray([
-        createImportDeclaration(className, srcPath),
-        ...(dependencies.map(d => createImportDeclaration(...d))),
+        ...ImportFactory.generate([[className, srcPath], ...dependencies]),
         BuilderFactory.generate(className, properties)
     ], false)
 }
