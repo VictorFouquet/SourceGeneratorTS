@@ -1,12 +1,12 @@
 import ts from "typescript";
 
-type Primitive = "number" | "string" | "boolean";
+export type Primitive = "number" | "string" | "boolean";
+export type NodeJsNativeObject = "Date";
 type PrimitiveLiteral = ts.FalseLiteral | ts.TrueLiteral | ts.NumericLiteral | ts.StringLiteral;
 
-type NodeJsNativeObject = "Date";
 
 
-class TypeSystem {
+export class TypeSystem {
     private static readonly _primitives = [
         "number", "string", "boolean"
     ];
