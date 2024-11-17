@@ -4,13 +4,14 @@ import { BuilderFactory } from "./builder.factory";
 import { ImportFactory } from "./import.factory";
 import { EntityAstParser, ParsedEntity } from "./entity.ast-parser";
 import { BuilderGeneratorConfig } from "./builder-generator.config";
+import { PathResolver } from "./path-resolver";
 
 
 export class BuilderGenerator {
-    private static readonly _targetFolder = `${__dirname}/${BuilderGeneratorConfig.TargetFolderPath}`;
-    private static readonly _sourceFolder = `${__dirname}/${BuilderGeneratorConfig.SourceFolderPath}`;
+    private static readonly _sourceFolder = `${__dirname}/${BuilderGeneratorConfig.SourceFolderName}`;
     private static readonly _printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
     private static readonly _result = ts.createSourceFile('', '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+    private static readonly _paths  = new PathResolver().resolvePaths();
 
     static generate() {
         this.logInfo("Starting generating builders...\n");
@@ -18,15 +19,15 @@ export class BuilderGenerator {
         this.createOutputFolder();
         const sourceContent = this.getSourceFolderContent();
 
-        this.logInfo(`Found ${sourceContent.length} entities to map in ./entities folder\n`)
+        this.logInfo(`Found ${sourceContent.length} entities to map in ${this._paths.entitiesFolder.relativePath} folder\n`)
 
-        for (let file of sourceContent) {
-            const parsedEntity = this.parseEntitySource(file)
+        for (let entityFile of this._paths.entityFiles) {
+            const parsedEntity = this.parseEntitySource(entityFile.absolutePath)
 
-            this.logInfo(`Parsed entity ${parsedEntity.name} from ./entities/${file}`);
+            this.logInfo(`Parsed entity ${parsedEntity.name} from ${entityFile.relativePath}`);
 
-            const formattedImportPath = this.getFormattedSourcePath(file);
-            const formattedTargetPath = this.getFormattedTargetPath(file);
+            const formattedImportPath = entityFile.importPath;
+            const formattedTargetPath = this.getFormattedTargetPath(entityFile.fileName);
             const builder = this.createBuilder(formattedImportPath, parsedEntity);
 
             this.saveBuilder(formattedTargetPath, builder);
@@ -37,21 +38,17 @@ export class BuilderGenerator {
     }
 
     private static createOutputFolder(): void {
-        if (!existsSync(this._targetFolder)) {
-            mkdirSync(this._targetFolder);
+        if (!existsSync(this._paths.buildersFolder.absolutePath)) {
+            mkdirSync(this._paths.buildersFolder.absolutePath);
         }
     }
 
     private static getSourceFolderContent() {
-        return readdirSync(this._sourceFolder).filter(f => f.endsWith(".ts"));
+        return readdirSync(this._paths.entitiesFolder.absolutePath).filter(f => f.endsWith(".ts"));
     }
 
     private static parseEntitySource(fileName: string): ParsedEntity {
-        return EntityAstParser.parse(`${this._sourceFolder}/${fileName}`);
-    }
-
-    private static getFormattedSourcePath(fileName: string): string {
-        return `../entities/${fileName.slice(0, fileName.length - '.ts'.length)}`
+        return EntityAstParser.parse(fileName);
     }
 
     private static getFormattedTargetPath(fileName: string): string {
@@ -59,7 +56,7 @@ export class BuilderGenerator {
             fileName.slice(0, fileName.length - '.entity.ts'.length) :
             fileName.slice(0, fileName.length - '.ts'.length);
 
-        return `${this._targetFolder}/${withoutSuffix}.builder.ts`;
+        return `${this._paths.buildersFolder.absolutePath}/${withoutSuffix}.builder.ts`;
     }
 
     private static saveBuilder(targetPath: string, builder: ts.NodeArray<ts.ImportDeclaration | ts.ClassDeclaration>) {

@@ -1,6 +1,6 @@
 import ts from "typescript";
 import { NodeJsNativeObject, Primitive } from "./builder.factory";
-import { BuilderGeneratorConfig } from "./builder-generator.config";
+import { PathResolver } from "./path-resolver";
 
 type Supported    = Primitive | NodeJsNativeObject
 type PropertyType = Supported | Exclude<string, Supported>;
@@ -13,6 +13,8 @@ export type ParsedEntity = {
 }
 
 export class EntityAstParser {
+    private static readonly _paths = new PathResolver().resolvePaths();
+
     static parse(path: string): ParsedEntity {
         const program = ts.createProgram([path], {
             target: ts.ScriptTarget.Latest,
@@ -63,12 +65,12 @@ export class EntityAstParser {
 
     private static getEntityImportPath(imported: string): string {
         const pathFormatted = `${imported[0].toLocaleLowerCase()}${imported.slice(1)}`;
-        return `../${BuilderGeneratorConfig.SourceFolderPath}/${pathFormatted}.entity`;
+        return `${this._paths.entitiesFolder.importPath}/${pathFormatted}.entity`;
     }
     
     private static getBuilderImportPath(imported: string): string {
         const pathFormatted = `${imported[0].toLocaleLowerCase()}${imported.slice(1)}`;
-        return `./${pathFormatted}.builder`;
+        return `${this._paths.buildersFolder.importPath}/${pathFormatted}.builder`;
     }
 
     private static visitInterfaceDeclaration(node: ts.InterfaceDeclaration, interfaceInfo: Partial<ParsedEntity>, checker: ts.TypeChecker): void {

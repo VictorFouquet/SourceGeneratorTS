@@ -1,4 +1,4 @@
 export class BuilderGeneratorConfig {
-    static readonly SourceFolderPath = "entities";
-    static readonly TargetFolderPath = "builders"
+    static readonly SourceFolderName = "entities";
+    static readonly TargetFolderName = "builders"
 }
