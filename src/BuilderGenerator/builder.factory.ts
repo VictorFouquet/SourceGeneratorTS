@@ -1,14 +1,20 @@
 import ts from "typescript";
 
 export type Primitive = "number" | "string" | "boolean";
+export type PrimitiveList = "number[]" | "string[]" | "boolean[]";
 export type NodeJsNativeObject = "Date";
+export type NodeJsNativeObjectList = "Date[]"
 type PrimitiveLiteral = ts.FalseLiteral | ts.TrueLiteral | ts.NumericLiteral | ts.StringLiteral;
-
-
+type ArrayLiteral = ts.ArrayLiteralExpression;
+type PredefinedType = Primitive | PrimitiveList | NodeJsNativeObject | NodeJsNativeObjectList;
 
 export class TypeSystem {
     private static readonly _primitives = [
         "number", "string", "boolean"
+    ];
+
+    private static readonly _primitivesList = [
+        "number[]", "string[]", "boolean[]"
     ];
 
     private static readonly _nodeNatives = [
@@ -21,8 +27,30 @@ export class TypeSystem {
         return this._primitives.includes(type);
     }
 
+    static isPrimitiveList(type: string): type is Primitive {
+        return this._primitivesList.includes(type);
+    }
+
     static isNodeNative(type: string): type is NodeJsNativeObject {
         return type === "Date";//this._nodeNatives.includes(type);
+    }
+
+    static isNodeNativeList(type: string): type is NodeJsNativeObjectList {
+        return type === "Date[]";//this._nodeNatives.includes(type);
+    }
+
+    static isPredefinedType(type: string): type is PredefinedType {
+        return this.isPrimitive(type)  ||
+            this.isPrimitiveList(type) ||
+            this.isNodeNative(type)    ||
+            this.isNodeNativeList(type);
+    }
+
+    static extractTypeFromList(type: string): string {
+        if (type.includes("[]")) {
+            type = type.replace("[]", "");
+        }
+        return type;
     }
 }
 
@@ -57,11 +85,14 @@ export class BuilderFactory {
     
         for (let [name, type] of members) {
             const privateModifier = [this._factory.createModifier(ts.SyntaxKind.PrivateKeyword)];
-            const initializer     = TypeSystem.isPrimitive(type) ?
-                this.getPrimitiveDefaultInitializer(type) :
+            const initializer     = TypeSystem.isPrimitive(type) || TypeSystem.isPrimitiveList(type) ?
+                this.getDefaultInitializer(type) :
                 TypeSystem.isNodeNative(type) ?
                     this.createNewExpression(type) :
-                    this.createBuildCallOnNewBuilder(`${type}Builder`);
+                    TypeSystem.isNodeNativeList(type) ?
+                        this._factory.createArrayLiteralExpression(
+                            [this.createNewExpression(TypeSystem.extractTypeFromList(type))]
+                        ) : this.createBuildCallOnNewBuilder(`${type}Builder`);
     
             properties.push(this.createMember(name, privateModifier, type, initializer));        
         }
@@ -69,7 +100,16 @@ export class BuilderFactory {
         return properties;
     }
 
-    private static getPrimitiveDefaultInitializer(type: Primitive): PrimitiveLiteral {
+    private static getDefaultInitializer(type: Primitive | PrimitiveList): PrimitiveLiteral | ArrayLiteral {
+        if (TypeSystem.isPrimitiveList(type)) {
+            const typeList = TypeSystem.extractTypeFromList(type);
+            if (TypeSystem.isPrimitive(typeList)) {
+                return this._factory.createArrayLiteralExpression([
+                    this.getDefaultInitializer(typeList)
+                ]);
+            }
+        }
+
         switch(type) {
             case "boolean":
                 return this._factory.createFalse();
@@ -203,8 +243,8 @@ export class BuilderFactory {
             const readonlyModifier = [this._factory.createModifier(ts.SyntaxKind.ReadonlyKeyword)];
             const initializer      = this.createWithFunction(
                 name,
-                TypeSystem.isNodeNative(type) || TypeSystem.isPrimitive(type) ? "value": "callback",
-                TypeSystem.isNodeNative(type) || TypeSystem.isPrimitive(type) ? type : `${type}Builder`,
+                TypeSystem.isPredefinedType(type) ? "value": "callback",
+                TypeSystem.isPredefinedType(type) ? type : `${type}Builder`,
             );
 
             functionMembers.push(
@@ -294,9 +334,9 @@ export class BuilderFactory {
     }
 
     private static createWithFunctionBody(memberToAssign: string, argType: string, argValue: string): ts.Block {
-        const assignStatement = TypeSystem.isPrimitive(argType) || TypeSystem.isNodeNative(argType) ?
-            this.createAssignFromPrimitive(memberToAssign, argValue) :
-            this.createAssignFromCallback(memberToAssign, argType);
+        const assignStatement = TypeSystem.isPredefinedType(argType) ?
+                this.createAssignFromPrimitive(memberToAssign, argValue) :
+                this.createAssignFromCallback(memberToAssign, argType);
         
         // Produces { this.member = value; return this; }
         return this.createFunctionBody([
