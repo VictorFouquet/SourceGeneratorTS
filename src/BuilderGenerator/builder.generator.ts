@@ -3,15 +3,13 @@ import { writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
 import { BuilderFactory } from "./builder.factory";
 import { ImportFactory } from "./import.factory";
 import { EntityAstParser, ParsedEntity } from "./entity.ast-parser";
-import { BuilderGeneratorConfig } from "./builder-generator.config";
 import { PathResolver } from "./path-resolver";
 
 
 export class BuilderGenerator {
-    private static readonly _sourceFolder = `${__dirname}/${BuilderGeneratorConfig.SourceFolderName}`;
     private static readonly _printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
-    private static readonly _result = ts.createSourceFile('', '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
-    private static readonly _paths  = new PathResolver().resolvePaths();
+    private static readonly _result  = ts.createSourceFile('', '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+    private static readonly _paths   = new PathResolver().resolvePaths();
 
     static generate() {
         this.logInfo("Starting generating builders...\n");
