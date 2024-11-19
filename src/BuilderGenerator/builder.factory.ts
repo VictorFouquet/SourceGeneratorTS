@@ -12,22 +12,8 @@ export class TypeSystem {
         "number", "string", "boolean"
     ];
 
-    private static readonly _primitivesList = [
-        "number[]", "string[]", "boolean[]"
-    ];
-
-    private static readonly _nodeNatives = [
-        "Date", "BigInt", "URL", "RegExp", "JSON",
-        "Buffer", "Uint8Array", "Uint16Array", "Uint32Array",
-        "Int8Array" , "Int16Array", "Int32Array"
-    ];
-
     static isPrimitive(type: string): type is Primitive {
         return this._primitives.includes(type);
-    }
-
-    static isPrimitiveList(type: string): type is Primitive {
-        return this._primitivesList.includes(type);
     }
 
     static isNodeNative(type: string): type is NodeJsNativeObject {
@@ -38,15 +24,8 @@ export class TypeSystem {
         return type.endsWith("[]");
     }
 
-    static isNodeNativeList(type: string): type is NodeJsNativeObjectList {
-        return type.match(/Date([])*[]/) !== null;//this._nodeNatives.includes(type);
-    }
-
     static isPredefinedType(type: string): type is PredefinedType {
-        return this.isPrimitive(type)  ||
-            this.isPrimitiveList(type) ||
-            this.isNodeNative(type)    ||
-            this.isNodeNativeList(type);
+        return this.isPrimitive(type) || this.isNodeNative(type);
     }
 
     static unpackList(type: string): string {
@@ -252,15 +231,16 @@ export class BuilderFactory {
     static createWithFunctionMembers(members: [string, string][]): ts.PropertyDeclaration[] {
         const functionMembers: ts.PropertyDeclaration[] = [];
 
-        for (let [name, type] of members) {
+        for (const [name, type] of members) {
             const scalar = TypeSystem.isList(type) ? TypeSystem.listToScalar(type) : type;
 
             const capitalizedName  = `${name[0].toLocaleUpperCase()}${name.slice(1)}`;
             const readonlyModifier = [this._factory.createModifier(ts.SyntaxKind.ReadonlyKeyword)];
+            const paramName        = TypeSystem.isPredefinedType(scalar) ? "value": "callback"
             const initializer      = this.createWithFunction(
                 name,
-                TypeSystem.isPredefinedType(scalar) ? "value": "callback",
-                type//TypeSystem.isPredefinedType(scalar) ? type : TypeSystem.typeToBuilderType(scalar),
+                paramName,
+                type
             );
 
             functionMembers.push(
