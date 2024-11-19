@@ -4,9 +4,8 @@ export type Primitive = "number" | "string" | "boolean";
 export type PrimitiveList = "number[]" | "string[]" | "boolean[]";
 export type NodeJsNativeObject = "Date";
 export type NodeJsNativeObjectList = "Date[]"
-type PrimitiveLiteral = ts.FalseLiteral | ts.TrueLiteral | ts.NumericLiteral | ts.StringLiteral;
-type ArrayLiteral = ts.ArrayLiteralExpression;
-type PredefinedType = Primitive | PrimitiveList | NodeJsNativeObject | NodeJsNativeObjectList;
+type List<T extends string> = `${T}[]`
+type PredefinedType = Primitive | NodeJsNativeObject | List<Primitive | NodeJsNativeObject>;
 
 export class TypeSystem {
     private static readonly _primitives = [
@@ -35,8 +34,12 @@ export class TypeSystem {
         return type === "Date";//this._nodeNatives.includes(type);
     }
 
+    static isList(type: string): type is List<string> {
+        return type.endsWith("[]");
+    }
+
     static isNodeNativeList(type: string): type is NodeJsNativeObjectList {
-        return type === "Date[]";//this._nodeNatives.includes(type);
+        return type.match(/Date([])*[]/) !== null;//this._nodeNatives.includes(type);
     }
 
     static isPredefinedType(type: string): type is PredefinedType {
@@ -46,11 +49,15 @@ export class TypeSystem {
             this.isNodeNativeList(type);
     }
 
-    static extractTypeFromList(type: string): string {
-        if (type.includes("[]")) {
-            type = type.replace("[]", "");
+    static unpackList(type: string): string {
+        if (type.endsWith("[]")) {
+            type = type.slice(0, type.length - "[]".length);
         }
         return type;
+    }
+
+    static typeToBuilderType(type: string): string {
+        return `${type}Builder`;
     }
 }
 
@@ -59,6 +66,7 @@ export class BuilderFactory {
     
     static generate(toBuildEntity: string, properties: [string, string][]) {
         const exportModifier       = [this._factory.createModifier(ts.SyntaxKind.ExportKeyword)];
+        const builderIdentifier    = this._factory.createIdentifier(TypeSystem.typeToBuilderType(toBuildEntity));
         const builderProperties    = this.createProperties(properties);
         const builderWithFunctions = this.createWithFunctionMembers(properties);
         const builderBuildFunction = this.createBuildFunctionMember(toBuildEntity, properties.map(p => p[0]));
@@ -66,7 +74,7 @@ export class BuilderFactory {
 
         return this._factory.createClassDeclaration(
             exportModifier,
-            this._factory.createIdentifier(`${toBuildEntity}Builder`),
+            builderIdentifier,
             undefined,
             undefined,
             [
@@ -83,33 +91,30 @@ export class BuilderFactory {
     static createProperties(members: [string, string][]): ts.PropertyDeclaration[] {
         const properties: ts.PropertyDeclaration[] = [];
     
-        for (let [name, type] of members) {
-            const privateModifier = [this._factory.createModifier(ts.SyntaxKind.PrivateKeyword)];
-            const initializer     = TypeSystem.isPrimitive(type) || TypeSystem.isPrimitiveList(type) ?
-                this.getDefaultInitializer(type) :
-                TypeSystem.isNodeNative(type) ?
-                    this.createNewExpression(type) :
-                    TypeSystem.isNodeNativeList(type) ?
-                        this._factory.createArrayLiteralExpression(
-                            [this.createNewExpression(TypeSystem.extractTypeFromList(type))]
-                        ) : this.createBuildCallOnNewBuilder(`${type}Builder`);
-    
-            properties.push(this.createMember(name, privateModifier, type, initializer));        
+        const privateModifier = [this._factory.createModifier(ts.SyntaxKind.PrivateKeyword)];
+
+        for (const [name, type] of members) {
+            const initializer = this.getDefaultInitializer(type);
+            properties.push(
+                this.createMember(name, privateModifier, type, initializer)
+            );
         }
 
         return properties;
     }
 
-    private static getDefaultInitializer(type: Primitive | PrimitiveList): PrimitiveLiteral | ArrayLiteral {
-        if (TypeSystem.isPrimitiveList(type)) {
-            const typeList = TypeSystem.extractTypeFromList(type);
-            if (TypeSystem.isPrimitive(typeList)) {
-                return this._factory.createArrayLiteralExpression([
-                    this.getDefaultInitializer(typeList)
-                ]);
-            }
-        }
+    private static getDefaultInitializer(type: string): ts.Expression {
+        if (TypeSystem.isList(type))
+            return this._factory.createArrayLiteralExpression(
+                [ this.getDefaultInitializer(TypeSystem.unpackList(type)) ]
+            );
+        else if (TypeSystem.isPrimitive(type))  return this.getPrimitiveInitializer(type);
+        else if (TypeSystem.isNodeNative(type)) return this.createNewExpression(type);
 
+        return this.createBuildCallOnNewBuilder(TypeSystem.typeToBuilderType(type));
+    }
+
+    private static getPrimitiveInitializer(type: Primitive): ts.Expression {
         switch(type) {
             case "boolean":
                 return this._factory.createFalse();
@@ -118,7 +123,9 @@ export class BuilderFactory {
             case "string":
                 return this._factory.createStringLiteral("");
             default:
-                throw new Error("PrimitiveInitializerError: ${type} is not a TypeSystem defined primitive")
+                throw new Error(
+                    `PrimitiveInitializerError: ${type} is not a TypeSystem defined primitive`
+                );
         }
     }
 
@@ -244,7 +251,7 @@ export class BuilderFactory {
             const initializer      = this.createWithFunction(
                 name,
                 TypeSystem.isPredefinedType(type) ? "value": "callback",
-                TypeSystem.isPredefinedType(type) ? type : `${type}Builder`,
+                TypeSystem.isPredefinedType(type) ? type : TypeSystem.typeToBuilderType(type),
             );
 
             functionMembers.push(
