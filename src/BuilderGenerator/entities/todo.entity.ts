@@ -1,6 +1,6 @@
 export type Todo = {
     id: number;
-    title: string;
-    done: boolean;
-    ownerId: number;
+    due: Date;
+    tags: string[];
+    creatorId: number;
 }
