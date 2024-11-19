@@ -56,6 +56,13 @@ export class TypeSystem {
         return type;
     }
 
+    static listToScalar(type: string): string {
+        if (type.endsWith("[]")) {
+            return this.listToScalar(this.unpackList(type));
+        }
+        return type;
+    }
+
     static typeToBuilderType(type: string): string {
         return `${type}Builder`;
     }
@@ -177,16 +184,16 @@ export class BuilderFactory {
 
     private static createAssignFromCallback(memberId: string, callbackBuilderType: string) {
         // Produces new {Class}Builder()
-        const newBuilder = this.createNewExpression(callbackBuilderType);
+        const newBuilder = this.createNewExpression(
+            TypeSystem.typeToBuilderType(
+                TypeSystem.listToScalar(callbackBuilderType)
+            )
+        );
         // Produces callback(newBuilder)
         const callbackCall = this._factory.createCallExpression(this._factory.createIdentifier("callback"), undefined, [newBuilder]);
-        // Produces callbackCall.build
-        const buildMethodAccess = this._factory.createPropertyAccessExpression(callbackCall, this._factory.createIdentifier("build"));
-        // Produces buildMethodAccess()
-        const buildMethodCall = this._factory.createCallExpression(buildMethodAccess, undefined, undefined);
 
-        // Finally produces this.member = callback(new {Class}Builder()).build();
-        return this.createAssignToThisMember(memberId, buildMethodCall);
+        // Finally produces this.member = callback(new {Class}Builder());
+        return this.createAssignToThisMember(memberId, callbackCall);
     }
 
     //--------------------------------------------------------------------------------------------- TypeNodes region
@@ -246,12 +253,14 @@ export class BuilderFactory {
         const functionMembers: ts.PropertyDeclaration[] = [];
 
         for (let [name, type] of members) {
+            const scalar = TypeSystem.isList(type) ? TypeSystem.listToScalar(type) : type;
+
             const capitalizedName  = `${name[0].toLocaleUpperCase()}${name.slice(1)}`;
             const readonlyModifier = [this._factory.createModifier(ts.SyntaxKind.ReadonlyKeyword)];
             const initializer      = this.createWithFunction(
                 name,
-                TypeSystem.isPredefinedType(type) ? "value": "callback",
-                TypeSystem.isPredefinedType(type) ? type : TypeSystem.typeToBuilderType(type),
+                TypeSystem.isPredefinedType(scalar) ? "value": "callback",
+                type//TypeSystem.isPredefinedType(scalar) ? type : TypeSystem.typeToBuilderType(scalar),
             );
 
             functionMembers.push(
@@ -314,8 +323,13 @@ export class BuilderFactory {
     }
 
     private static createCallbackParameterType(entityName: string) {
+        const callbackArgName  = this._factory.createIdentifier("builder");
         const entityAsTypeNode = this.createTypeNode(entityName);
-        const callbackArgName = this._factory.createIdentifier("builder");
+        const argumentType     = this.createTypeNode(
+            TypeSystem.typeToBuilderType(
+                TypeSystem.listToScalar(entityName)
+            )
+        );
         // Produces builder: ClassName
         const callbackParams = [
             this._factory.createParameterDeclaration(
@@ -323,12 +337,12 @@ export class BuilderFactory {
                 undefined, // ... token
                 callbackArgName,
                 undefined,
-                entityAsTypeNode,
+                argumentType,
                 undefined
             )
         ];
 
-        // Produces callback: (builder: ClassBuilder) => ClassBuilder
+        // Produces callback: (builder: ClassBuilder) => Class
         return this._factory.createFunctionTypeNode(
             undefined,
             callbackParams,
@@ -341,7 +355,8 @@ export class BuilderFactory {
     }
 
     private static createWithFunctionBody(memberToAssign: string, argType: string, argValue: string): ts.Block {
-        const assignStatement = TypeSystem.isPredefinedType(argType) ?
+        const scalar = TypeSystem.listToScalar(argType)
+        const assignStatement = TypeSystem.isPredefinedType(scalar) ?
                 this.createAssignFromPrimitive(memberToAssign, argValue) :
                 this.createAssignFromCallback(memberToAssign, argType);
         
