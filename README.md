@@ -32,9 +32,9 @@ export type Todo = {
 import { Todo } from "./todo.entity";
 
 export type User {
-    id: number,
-    name: string,
-    todos: Todo[]
+    id: number;
+    name: string;
+    todos: Todo[];
 }
 ```
 The generated UserBuilder will be :
